@@ -1,0 +1,29 @@
+# ── KOIB RAG v4.12 — зависимости СЕРВЕРНОЙ сборки (только обслуживание запросов) ──
+# Индексация (pymupdf/python-docx/pillow/pytesseract) сюда НЕ входит.
+# Установка: сначала requirements-torch-cpu.txt, затем этот файл (см. README_SERVER.md).
+
+# Веб-слой
+fastapi>=0.110
+uvicorn[standard]>=0.29
+pydantic>=2.6
+aiohttp>=3.9
+
+# Конфиг / утилиты
+python-dotenv>=1.0
+numpy>=1.26
+
+# Поиск: плотный (FAISS) + эмбеддинги (e5-small через sentence-transformers)
+faiss-cpu>=1.8
+langchain-core>=0.2
+langchain-community>=0.2
+langchain-huggingface>=0.0.3
+sentence-transformers>=2.7
+
+# Русская морфология для BM25 (лемматизация запросов/чанков)
+pymorphy2>=0.9.1
+pymorphy2-dicts-ru>=2.4
+
+# ── НЕ нужны для провайдера gigachat (по умолчанию) ──
+# Раскомментируйте ТОЛЬКО если переключаете LLM_PROVIDER=openai или EMBEDDING_PROVIDER=openai:
+# openai>=1.30
+# langchain-openai>=0.1

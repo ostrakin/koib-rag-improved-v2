@@ -1,0 +1,36 @@
+# ── KOIB RAG — зависимости приложения ИНДЕКСАЦИИ (мощный компьютер) ──
+# Включает тяжёлый парсинг/OCR и построение индекса.
+
+# Веб-слой (нужен для локального теста serve/query, опционально)
+fastapi>=0.110
+uvicorn[standard]>=0.29
+pydantic>=2.6
+aiohttp>=3.9
+
+# Конфиг / утилиты
+python-dotenv>=1.0
+numpy>=1.26
+
+# Индексация и поиск
+faiss-cpu>=1.8
+langchain-core>=0.2
+langchain-community>=0.2
+langchain-huggingface>=0.0.3
+sentence-transformers>=2.7        # эмбеддинги + reranker (CrossEncoder)
+
+# LLM-провайдеры (опционально, для evaluate)
+langchain-openai>=0.1
+openai>=1.30
+
+# Парсинг документов (ТОЛЬКО индексатор)
+pymupdf>=1.24                     # импортируется как fitz
+python-docx>=1.1
+pillow>=10.0
+pytesseract>=0.3.10               # требует системный tesseract-ocr (+rus)
+
+# Морфология для BM25 (русская лемматизация)
+pymorphy2>=0.9.1
+pymorphy2-dicts-ru>=2.4
+
+# Тесты (dev)
+pytest>=8.0

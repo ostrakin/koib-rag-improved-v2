@@ -1,0 +1,29 @@
+services:
+  koib:
+    build:
+      context: .
+      args:
+        BAKE_MODEL: "1"        # запечь модель в образ (офлайн-старт). 0 — качать при первом запуске.
+    image: koib-rag-server:4.12
+    container_name: koib-rag
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "8000:8000"
+    volumes:
+      # Готовый индекс кладётся сюда (FAISS + BM25 + docstore)
+      - ./output:/app/output
+      # Кэш модели переживает пересоздание контейнера
+      - hf-cache:/app/.hf-cache
+    # ── Лимиты под сервер с 2 ГБ ОЗУ ──
+    mem_limit: 1800m
+    memswap_limit: 3800m         # 1800 ОЗУ + ~2 ГБ swap
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+
+volumes:
+  hf-cache:

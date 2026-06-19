@@ -1,0 +1,13 @@
+venv/
+.venv/
+__pycache__/
+*.pyc
+.env
+.git/
+.hf-cache/
+output/index/
+output/docstore/
+output/figures/
+output/logs/
+output/metadata/
+*.zip

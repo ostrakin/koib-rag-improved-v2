@@ -1,0 +1,7 @@
+# Ставится ПЕРВЫМ, чтобы sentence-transformers НЕ подтянул CUDA-сборку torch (~2.5 ГБ).
+# CPU-колесо torch занимает ~190 МБ и потребляет в разы меньше ОЗУ.
+#
+#   pip install -r requirements-torch-cpu.txt
+#
+--index-url https://download.pytorch.org/whl/cpu
+torch>=2.2,<2.6

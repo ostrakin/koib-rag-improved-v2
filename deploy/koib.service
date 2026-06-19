@@ -1,0 +1,36 @@
+[Unit]
+Description=KOIB RAG API server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Создайте пользователя:  sudo useradd -r -s /usr/sbin/nologin koib
+User=koib
+Group=koib
+WorkingDirectory=/opt/koib-server
+
+# Ограничение потоков (должно быть в окружении ДО импорта torch)
+Environment=OMP_NUM_THREADS=1
+Environment=OPENBLAS_NUM_THREADS=1
+Environment=MKL_NUM_THREADS=1
+Environment=NUMEXPR_NUM_THREADS=1
+Environment=TOKENIZERS_PARALLELISM=false
+Environment=MALLOC_ARENA_MAX=2
+# Кэш Hugging Face в каталоге проекта (чтобы модель не качалась повторно)
+Environment=HF_HOME=/opt/koib-server/.hf-cache
+
+# Остальная конфигурация читается из /opt/koib-server/.env (python-dotenv)
+ExecStart=/opt/koib-server/venv/bin/uvicorn api.app:app --host 0.0.0.0 --port 8000 --workers 1 --timeout-keep-alive 30
+
+Restart=on-failure
+RestartSec=5
+
+# ── Защита хоста на 2 ГБ ОЗУ ──
+# Если процесс распухнет, systemd прижмёт/перезапустит его, а не подвесит сервер.
+MemoryHigh=1500M
+MemoryMax=1800M
+OOMPolicy=stop
+
+[Install]
+WantedBy=multi-user.target
