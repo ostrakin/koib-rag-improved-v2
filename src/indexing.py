@@ -99,7 +99,6 @@ def get_global_embeddings():
                 encode_kwargs={
                     "normalize_embeddings": True,
                     "batch_size": INDEXING_BATCH_SIZE,
-                    "show_progress_bar": True,
                 },
             )
             _GLOBAL_EMBEDDINGS = PassagePrefixEmbeddings(base)
