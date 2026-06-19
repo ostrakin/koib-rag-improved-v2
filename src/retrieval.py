@@ -175,12 +175,22 @@ class HybridRetriever:
         if not model_filter or model_filter not in KNOWN_MODELS:
             return results
         strict = MODEL_FILTER_STRICT if strict_model is None else strict_model
+
+        # Правовые/процедурные документы (постановления ЦИК, инструкции, акты)
+        # кросс-модельны: они валидны для ЛЮБОЙ модели КОИБ и не должны
+        # отсеиваться строгим фильтром, иначе нормативная основа молча выпадает
+        # из ответа (Проблема 4). Их распознаём по фасету doc_category.
+        def _cross_model(r: RetrievalResult) -> bool:
+            return (r.metadata or {}).get("doc_category") in {"legal", "procedure"}
+
         exact = [r for r in results if r.model == model_filter]
-        unknown = [r for r in results if r.model not in KNOWN_MODELS]
+        cross = [r for r in results if _cross_model(r) and r.model != model_filter]
         # чанки других известных моделей сюда не попадают (отсеяны в _vector/_bm25)
+        unknown = [r for r in results
+                   if r.model not in KNOWN_MODELS and not _cross_model(r)]
         if strict and len(exact) >= MODEL_STRICT_MIN_EXACT:
-            return exact  # не подмешиваем 'unknown', чтобы не путать интерфейсы
-        return exact + unknown
+            return exact + cross  # нормативку оставляем всегда, 'unknown' не подмешиваем
+        return exact + cross + unknown
 
     def _expand_context(self, results: List[RetrievalResult]) -> None:
         docstore = self.index_builder.docstore
