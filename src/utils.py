@@ -1,3 +1,4 @@
+
 # -*- coding: utf-8 -*-
 """
 Koib-V-4.8 — Общие утилиты + Память диалога
@@ -219,6 +220,33 @@ def detect_model_from_filename(filename: str) -> str:
             return match.group(1).strip()
 
     return "unknown"
+
+
+# Категории документов. Правовые и процедурные документы кросс-модельны (не
+# привязаны к конкретной модели КОИБ-2010/2017), поэтому их нельзя класть в
+# фасет ``model`` — для них заводим отдельный фасет ``doc_category``.
+_CATEGORY_FILENAME_PATTERNS: Dict[str, List[str]] = {
+    "legal": ["постанов", "цик", "пост-", "пост.", "пост ", "_114_", "896-8", "1148-7"],
+    "procedure": ["инструкц", "порядк", "регламент", "139", "едг"],
+    "form": ["акт", "протокол", "приложение", "zp21"],
+}
+
+
+def detect_doc_category(filename: str, text: str = "") -> str:
+    """Грубая категория документа: ``manual`` / ``legal`` / ``procedure`` / ``form``.
+
+    Используется как самостоятельный фасет фильтрации. Правовые и процедурные
+    документы считаются кросс-модельными и не должны отсеиваться строгим
+    фильтром по модели КОИБ (см. retrieval._apply_model_policy).
+    """
+    fn = (filename or "").lower()
+    for cat in ("legal", "procedure", "form"):
+        if any(p in fn for p in _CATEGORY_FILENAME_PATTERNS[cat]):
+            return cat
+    # руководства по эксплуатации с распознанной моделью — это manual
+    if detect_model_from_filename(filename) in KNOWN_MODELS or "руковод" in fn or "эксплуат" in fn:
+        return "manual"
+    return "manual"
 
 
 def detect_strong_model(text: str) -> ModelDetection:
@@ -550,3 +578,5 @@ def looks_like_jsonl_artifact(path: Path) -> bool:
     except Exception:
         return False
     return False
+
+

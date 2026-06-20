@@ -99,7 +99,6 @@ def get_global_embeddings():
                 encode_kwargs={
                     "normalize_embeddings": True,
                     "batch_size": INDEXING_BATCH_SIZE,
-                    "show_progress_bar": True,
                 },
             )
             _GLOBAL_EMBEDDINGS = PassagePrefixEmbeddings(base)
@@ -138,11 +137,11 @@ def _get_morph():
         if _MORPH_ANALYZER is not None:
             return _MORPH_ANALYZER
         try:
-            import pymorphy2
+            import pymorphy3
 
-            _MORPH_ANALYZER = pymorphy2.MorphAnalyzer()
+            _MORPH_ANALYZER = pymorphy3.MorphAnalyzer()
         except Exception as exc:
-            logger.warning("pymorphy2 недоступен, BM25 будет без лемматизации: %s", exc)
+            logger.warning("pymorphy3 недоступен, BM25 будет без лемматизации: %s", exc)
             _MORPH_ANALYZER = None
         return _MORPH_ANALYZER
 

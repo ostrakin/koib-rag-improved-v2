@@ -1,3 +1,4 @@
+
 # -*- coding: utf-8 -*-
 """
 Smart chunking for KOIB RAG.
@@ -24,7 +25,14 @@ except Exception:  # lightweight fallback for tests / minimal environments
             self.metadata = metadata or {}
 
 from .parsing import DocumentElement
-from .utils import clean_text, estimate_tokens, normalize_ocr_text, strip_embedding_prefix, text_hash
+from .utils import (
+    clean_text,
+    detect_doc_category,
+    estimate_tokens,
+    normalize_ocr_text,
+    strip_embedding_prefix,
+    text_hash,
+)
 from .text_processing import (
     generate_formula_summary as _generate_formula_summary,
     generate_table_summary as _generate_table_summary,
@@ -245,12 +253,73 @@ def split_large_table(markdown: str, max_chars: int = TABLE_MAX_CHARS) -> List[s
     return pieces or [markdown]
 
 
+# Границы для дробления сверхдлинного одиночного куска: предложения и переносы.
+_SENT_SPLIT = re.compile(r"(?<=[.!?;:])\s+|\n+")
+
+
+def _char_windows(s: str, max_tokens: int) -> List[str]:
+    """Последняя линия защиты: режем по символам, если иных границ нет.
+
+    Шаг согласован с estimate_tokens (1 токен ≈ 2.5 символа, коэффициент 0.4),
+    чтобы каждое окно укладывалось в max_tokens.
+    """
+    step = max(1, int(max_tokens / 0.4))
+    return [s[i:i + step] for i in range(0, len(s), step)]
+
+
+def _atoms(unit: str, max_tokens: int) -> List[str]:
+    """Разложить переразмерный кусок на атомы, каждый <= max_tokens.
+
+    Стратегия по убыванию структурности: предложения/строки -> слова ->
+    жёсткое окно по символам. Куски, помещающиеся в лимит, не трогаются.
+    Это закрывает утечку, при которой одиночный «абзац» (например, .docx-таблица,
+    пришедшая по текстовому пути) больше лимита уходил в индекс одним чанком.
+    """
+    if estimate_tokens(unit) <= max_tokens:
+        return [unit]
+    parts = [u for u in _SENT_SPLIT.split(unit) if u and u.strip()]
+    if len(parts) == 1:
+        parts = unit.split(" ")
+    atoms: List[str] = []
+    for p in parts:
+        atoms.extend(_char_windows(p, max_tokens) if estimate_tokens(p) > max_tokens else [p])
+    return atoms
+
+
+def _pack(atoms: List[str], sep: str, max_tokens: int) -> List[str]:
+    """Жадно упаковать атомы, измеряя РЕАЛЬНУЮ длину кандидата (с разделителями).
+
+    Прежняя версия складывала ``current_tokens`` как сумму токенов кусков и не
+    учитывала длину разделителей при склейке, из-за чего итоговый чанк мог
+    превышать лимит. Здесь длина проверяется по фактической строке-кандидату.
+    """
+    chunks: List[str] = []
+    cur = ""
+    for a in atoms:
+        cand = (cur + sep + a) if cur else a
+        if cur and estimate_tokens(cand) > max_tokens:
+            chunks.append(cur)
+            cur = a
+        else:
+            cur = cand
+    if cur:
+        chunks.append(cur)
+    return chunks
+
+
 def _split_text_semantic(
     text: str,
     max_tokens: int = TEXT_CHUNK_SIZE,
     overlap_tokens: int = TEXT_CHUNK_OVERLAP,
 ) -> List[str]:
-    """Split text into paragraph-aware chunks."""
+    """Абзацно-ориентированная нарезка с ГАРАНТИЕЙ верхнего предела по токенам.
+
+    В отличие от прежней версии:
+    * одиночный абзац/строка больше лимита дробится (`_atoms`) — больше нет
+      переразмеренных чанков из .docx-таблиц, пришедших по текстовому пути;
+    * упаковка считает фактическую длину со разделителями (`_pack`);
+    * overlap добавляется как «хвост» предыдущего чанка в пределах бюджета.
+    """
     text = sanitize_chunk_content(text)
     if not text or len(text.strip()) < MIN_CHUNK_LENGTH:
         return []
@@ -261,38 +330,39 @@ def _split_text_semantic(
     if not paragraphs:
         paragraphs = [text.strip()]
 
-    chunks: List[str] = []
-    current_parts: List[str] = []
-    current_tokens = 0
-
+    atoms: List[str] = []
     for para in paragraphs:
         if is_noise_text(para):
             continue
-        para_tokens = estimate_tokens(para)
-        if current_tokens + para_tokens > max_tokens and current_parts:
-            chunks.append("\n\n".join(current_parts))
+        atoms.extend(_atoms(para, max_tokens))
 
-            overlap_parts: List[str] = []
-            overlap_tok = 0
-            for p in reversed(current_parts):
-                pt = estimate_tokens(p)
-                if overlap_tok + pt > overlap_tokens:
+    if not atoms:
+        return []
+
+    # overlap уже учтён внутри бюджета max_tokens: пакуем с запасом, затем
+    # пришиваем «хвост» предыдущего чанка к началу следующего.
+    if overlap_tokens > 0:
+        budget = max(MIN_CHUNK_LENGTH // 4, max_tokens - overlap_tokens)
+        base_chunks = _pack(atoms, "\n\n", budget)
+        chunks: List[str] = []
+        prev_tail = ""
+        for ch in base_chunks:
+            stitched = (prev_tail + "\n\n" + ch).strip() if prev_tail else ch
+            chunks.append(stitched)
+            words = ch.split(" ")
+            tail: List[str] = []
+            ttok = 0
+            for w in reversed(words):
+                wt = estimate_tokens(w)
+                if ttok + wt > overlap_tokens:
                     break
-                overlap_parts.insert(0, p)
-                overlap_tok += pt
+                tail.insert(0, w)
+                ttok += wt
+            prev_tail = " ".join(tail)
+    else:
+        chunks = _pack(atoms, "\n\n", max_tokens)
 
-            current_parts = overlap_parts
-            current_tokens = overlap_tok
-
-        current_parts.append(para)
-        current_tokens += para_tokens
-
-    if current_parts:
-        chunk_text = "\n\n".join(current_parts)
-        if estimate_tokens(chunk_text) >= MIN_CHUNK_LENGTH // 4:
-            chunks.append(chunk_text)
-
-    return chunks
+    return [c for c in chunks if estimate_tokens(c) >= MIN_CHUNK_LENGTH // 4]
 
 
 class SmartChunker:
@@ -354,6 +424,21 @@ class SmartChunker:
                         chunks.append(structured)
                 last_scope = None
             else:
+                # .docx нередко отдаёт таблицу как обычный текстовый элемент с
+                # markdown-разметкой (| ... | ... |). Перехватываем такие случаи и
+                # отправляем по табличному пути, чтобы сработали split_large_table
+                # и table-саммари, а не текстовый сплиттер (иначе крупная таблица
+                # уходила в индекс одним переразмеренным text-чанком — Проблема 1).
+                stripped = (element.content or "").lstrip()
+                looks_like_table = stripped.startswith("|") and element.content.count("\n|") >= 2
+                if looks_like_table and not is_degenerate_table(element.content):
+                    flush()
+                    element.element_type = "table"
+                    for structured in self._chunk_structured_element(element, current_heading):
+                        if structured.content and not is_noise_text(structured.content, min_alpha=0):
+                            chunks.append(structured)
+                    last_scope = None
+                    continue
                 if last_scope is not None and scope != last_scope:
                     flush()
                 text_buffer.append(element)
@@ -394,6 +479,7 @@ class SmartChunker:
                 "page": page,
                 "heading": heading_value,
                 "model": model,
+                "doc_category": detect_doc_category(source),
                 "chunk_index": i,
             }
             if page_end and page_end != page:
@@ -416,6 +502,7 @@ class SmartChunker:
             "page": element.page,
             "heading": heading or element.heading,
             "model": element.model,
+            "doc_category": detect_doc_category(element.source),
             "element_id": element.element_id,
             **element.metadata,
         }
@@ -483,3 +570,5 @@ class SmartChunker:
                 metadata=base_meta,
             )
         ]
+
+

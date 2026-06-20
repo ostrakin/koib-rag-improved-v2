@@ -19,8 +19,8 @@
                         этапа индексации на мощной машине.
 
 Модуль использует только стандартную библиотеку. Частотный словарь для
-разбиения слов строится лениво из pymorphy2 (если установлен) плюс доменный
-список терминов КОИБ; при отсутствии pymorphy2 разбиение работает на доменном
+разбиения слов строится лениво из pymorphy3(если установлен) плюс доменный
+список терминов КОИБ; при отсутствии pymorphy3 разбиение работает на доменном
 словаре и не ломает текст (консервативно: режет только при уверенной сегментации).
 """
 from __future__ import annotations
@@ -179,11 +179,11 @@ def _word_costs() -> Dict[str, float]:
     # доменные слова — самые «дешёвые»
     for w in _DOMAIN_WORDS:
         words[w] = 1.0
-    # расширяем общерусским словарём из pymorphy2, если он доступен
+    # расширяем общерусским словарём из pymorphy3, если он доступен
     try:  # pragma: no cover - зависит от окружения
-        import pymorphy2  # type: ignore
+        import pymorphy3  # type: ignore
 
-        morph = pymorphy2.MorphAnalyzer()
+        morph = pymorphy3.MorphAnalyzer()
         dawg = getattr(morph.dictionary, "words", None)
         if dawg is not None:
             for i, key in enumerate(dawg.iterkeys()):
@@ -193,7 +193,7 @@ def _word_costs() -> Dict[str, float]:
                 if i > 200000:
                     break
     except Exception as exc:
-        logger.debug("pymorphy2 недоступен для словаря разбиения: %s", exc)
+        logger.debug("pymorphy3 недоступен для словаря разбиения: %s", exc)
     return words
 
 

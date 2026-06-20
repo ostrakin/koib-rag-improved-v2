@@ -1,3 +1,4 @@
+
 # -*- coding: utf-8 -*-
 """Batch indexing for KOIB RAG."""
 from __future__ import annotations
@@ -51,8 +52,17 @@ def _process_file_task(file_path: Path) -> Tuple[Path, List, bool, str]:
         chunks = SmartChunker().chunk_elements(elements)
         if not chunks:
             return file_path, [], False, "не создано чанков"
+        # П2 (без LLM, всегда): обогащаем слабые подписи рисунков/формул
+        # контекстом соседнего текста той же страницы, чтобы они находились
+        # поиском даже без мультимодальной модели.
+        try:
+            from src.figure_context import enrich_figures_with_context
+            enrich_figures_with_context(chunks)  # мутирует chunks на месте
+        except Exception:
+            logger.exception("Обогащение рисунков контекстом пропущено для %s", file_path)
         # П7: описания изображений генерируются ТОЛЬКО на этапе индексации
-        # (тяжёлый Vision-вызов), и только если включён флаг в конфиге.
+        # (тяжёлый Vision-вызов), и только если включён флаг в конфиге. Vision
+        # отрабатывает ПОСЛЕ текстового обогащения и перезаписывает слабые подписи.
         try:
             from config import FIGURE_CAPTIONING_ENABLED
             if FIGURE_CAPTIONING_ENABLED:
@@ -253,3 +263,5 @@ class BatchIngester:
         mode = "полный rebuild" if rebuild or not self.incremental else "incremental"
         print(f"\nРезультат ({mode}): документы OK={doc_success}, документы errors={doc_errors}, артефакты OK={art_success}, артефакты errors={art_errors}")
         print(f"  Индексы сохранены в {self.output_dir}. Время сборки: {time.time() - t0:.1f}с")
+
+
